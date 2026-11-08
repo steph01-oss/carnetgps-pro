@@ -41,7 +41,9 @@
   var members = [];
   function startSync() {
     if (!window.Cloud || !Cloud.configured() || !Cloud.session()) return;
-    Cloud.startPolling(function (res) { members = res.members || members; merge(res.clients || []); if (curTab() === 'team') renderTeam(); }, 8000);
+    Cloud.startPolling(function (res) { members = res.members || members; var me0 = Cloud.session();
+      if (me0 && !members.some(function (m) { return m.userId === me0.userId; })) { Cloud.leave(); members = []; toast('Tu as été retiré de l\'équipe.'); renderTeam(); return; }
+      merge(res.clients || []); if (curTab() === 'team') renderTeam(); }, 8000);
     Cloud.push(clients.filter(function (c) { return c.ownerId === ownerId(); })).catch(function () {});
   }
 
@@ -173,9 +175,29 @@
     var el = $('#team'), s = window.Cloud && Cloud.session(), C = window.GC_CONFIG || {};
     if (!window.Cloud || !Cloud.configured()) { el.innerHTML = '<div class="card"><h3>🤝 Équipe</h3><p>Partage tes adresses avec tes collègues en temps réel.</p><p class="muted">La synchronisation n\'est pas encore activée sur cette installation.</p></div>'; return; }
     if (s) {
-      el.innerHTML = '<div class="card"><h3>' + esc(s.teamName) + '</h3><p>Code à donner à tes collègues :</p><p class="code">' + esc(s.joinCode) + '</p></div><div class="card"><h3>Membres</h3>' +
-        (members.length ? members.map(function (m) { return '<p><span class="dot" style="background:' + esc(m.color) + '"></span>' + esc(m.display_name || m.displayName || m.name || '') + '</p>'; }).join('') : '<p class="muted">Chargement…</p>') + '</div><button class="btn danger" id="t-leave">Quitter l\'équipe</button>';
-      $('#t-leave').onclick = function () { if (confirm('Quitter l\'équipe ? Tes clients restent sur ce téléphone.')) { Cloud.leave(); renderTeam(); } };
+      var admin = s.role === 'admin', fmt = function (d) { return d ? new Date(d).toLocaleDateString('fr-FR') : ''; };
+      var expired = admin && s.codeExpires && new Date(s.codeExpires) < new Date();
+      var h = '<div class="card"><h3>' + esc(s.teamName) + (admin ? ' <span class="badge pro">PATRON</span>' : '') + '</h3>';
+      if (admin) {
+        h += s.joinCode ? '<p>Code à donner à tes collègues :</p><p class="code">' + esc(s.joinCode) + '</p><p class="muted">' + (expired ? '<span style="color:var(--r)">Code expiré</span> — régénère-le.' : 'Valable jusqu\'au ' + fmt(s.codeExpires)) + '</p>' +
+          '<div class="row"><button class="btn" id="t-share">📤 Partager</button><button class="btn" id="t-regen">🔄 Nouveau code</button></div>' : '<p class="muted">Chargement du code…</p>';
+      } else h += '<p class="muted">Tu es membre. Seul le patron peut inviter de nouveaux livreurs.</p>';
+      h += '</div><div class="card"><h3>Membres (' + members.length + '/10)</h3>' + (members.length ? members.map(function (m) {
+        var mine = m.userId === s.userId, nm = m.displayName || m.display_name || '';
+        return '<p style="display:flex;justify-content:space-between;align-items:center"><span><span class="dot" style="background:' + esc(m.color) + '"></span>' + esc(nm) + (m.role === 'admin' ? ' 👑' : '') + (mine ? ' (moi)' : '') + '</span>' +
+          (admin && !mine ? '<button class="btn sm danger" data-rm="' + esc(m.userId) + '" data-nm="' + esc(nm) + '">Retirer</button>' : '') + '</p>';
+      }).join('') : '<p class="muted">Chargement…</p>') + '</div>' +
+        '<button class="btn danger" id="t-leave">Quitter l\'équipe</button>' + (admin ? ' <button class="btn danger" id="t-del">Supprimer l\'équipe</button>' : '');
+      el.innerHTML = h;
+      var fail = function (e) { toast(e.userMessage || e.message); };
+      if (admin && !s.joinCode) Cloud.refreshCode().then(renderTeam).catch(fail);
+      var sh = $('#t-share'); if (sh) sh.onclick = function () {
+        var txt = 'Rejoins mon équipe CarnetGPS : ' + location.href.split('#')[0] + ' — onglet Équipe, code : ' + s.joinCode;
+        if (navigator.share) navigator.share({ text: txt }).catch(function () {}); else if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { toast('Message copié ✔'); }); };
+      var rg = $('#t-regen'); if (rg) rg.onclick = function () { if (confirm('Créer un nouveau code ? L\'ancien ne marchera plus (les membres actuels restent dans l\'équipe).')) Cloud.regenerateCode().then(function () { toast('Nouveau code ✔'); renderTeam(); }).catch(fail); };
+      el.querySelectorAll('[data-rm]').forEach(function (b) { b.onclick = function () { if (confirm('Retirer ' + b.dataset.nm + ' de l\'équipe ? Il perdra l\'accès aux clients.')) Cloud.removeMember(b.dataset.rm).then(function () { members = members.filter(function (x) { return x.userId !== b.dataset.rm; }); toast('Livreur retiré ✔'); renderTeam(); }).catch(fail); }; });
+      $('#t-leave').onclick = function () { if (confirm('Quitter l\'équipe ? Tu ne verras plus les clients des autres. Les clients que tu as créés restent aussi chez l\'équipe.')) Cloud.leaveTeam().then(function () { members = []; toast('Équipe quittée'); renderTeam(); }).catch(fail); };
+      var dl = $('#t-del'); if (dl) dl.onclick = function () { if (confirm('SUPPRIMER l\'équipe et tous ses clients pour tout le monde ? Impossible à annuler.') && confirm('Dernière confirmation : supprimer définitivement ?')) Cloud.deleteTeam().then(function () { members = []; toast('Équipe supprimée'); renderTeam(); }).catch(fail); };
       return;
     }
     var col = COLORS.map(function (c) { return '<option value="' + c + '"' + (c === me.color ? ' selected' : '') + ' style="color:' + c + '">● ' + c + '</option>'; }).join('');
@@ -224,7 +246,7 @@
     if (!st.pro) h += '<div class="card"><h3>Passer en Pro — 4,99 €/mois</h3><p>Clients illimités · équipe · CSV · tournée optimisée</p>' + (C.payLinkMonthly ? '<div class="row"><a class="btn pri" style="text-align:center;text-decoration:none" target="_blank" href="' + esc(C.payLinkMonthly) + '">Mensuel 4,99 €</a>' + (C.payLinkYearly ? '<a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + esc(C.payLinkYearly) + '">Annuel 39 €</a>' : '') + '</div>' : '<p class="muted">Contact : ' + esc(C.contact || '') + '</p>') + '</div>';
     h += '<div class="card"><h3>Clé de licence</h3><textarea id="s-key" placeholder="GC1.…"></textarea><div class="row"><button class="btn pri" id="s-act">Activer</button>' + (st.pro || st.expired ? '<button class="btn" id="s-rm">Retirer</button>' : '') + '</div></div>' +
       '<div class="card"><h3>Données ' + (License.isPro() ? '' : '<span class="badge">PRO</span>') + '</h3><div class="row"><button class="btn" id="s-imp">⬆ Importer CSV</button><button class="btn" id="s-exp">⬇ Exporter CSV</button></div><input type="file" id="s-file" accept=".csv,text/csv" class="hide"><p class="muted">Colonnes : nom;adresse;telephone;notes;lat;lng</p></div>' +
-      '<div class="card"><h3>Confidentialité</h3><p class="muted">Tes clients restent sur ton téléphone. Ils ne sont envoyés à un serveur que si tu rejoins une équipe. Aucune publicité, aucune revente de données. L\'adresse saisie est envoyée à OpenStreetMap uniquement quand tu appuies sur « Localiser ».</p></div>';
+      '<div class="card"><h3>Confidentialité</h3><p class="muted">Tes clients restent sur ton téléphone. Ils ne sont envoyés à un serveur que si tu rejoins une équipe. Aucune publicité, aucune revente de données. L\'adresse saisie est envoyée à OpenStreetMap uniquement quand tu appuies sur « Localiser ». <a href="privacy.html" target="_blank" style="color:var(--g)">Politique complète</a></p></div>';
     $('#settings').innerHTML = h;
     $('#s-act').onclick = async function () { try { await License.activate($('#s-key').value); toast('Pro activé 🎉'); } catch (e) { toast(e.message); } };
     var rm = $('#s-rm'); if (rm) rm.onclick = function () { if (confirm('Retirer la licence de cet appareil ?')) License.remove(); };

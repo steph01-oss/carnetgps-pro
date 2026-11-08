@@ -9,7 +9,11 @@
     EQUIPE_PLEINE: "Cette équipe est complète (10 membres maximum).",
     HORS_LIGNE: "Pas de connexion pour le moment.",
     NON_CONFIGURE: "Le cloud n'est pas configuré.",
-    SESSION_EXPIREE: "Session expirée, reconnecte-toi à l'équipe."
+    SESSION_EXPIREE: "Session expirée, reconnecte-toi à l'équipe.",
+    CODE_EXPIRE: "Ce code a expiré. Demande un nouveau code à ton patron.",
+    TROP_DESSAIS: "Trop d'essais. Réessaie dans 15 minutes.",
+    NON_ADMIN: "Seul le patron de l'équipe peut faire ça.",
+    EQUIPE_CLIENTS_MAX: "Cette équipe a atteint la limite de 5000 clients."
   };
 
   function cfg() { var c = window.GC_CONFIG || {}; return { url: String(c.supabaseUrl || '').replace(/\/+$/, ''), key: c.anonKey || '' }; }
@@ -82,7 +86,8 @@
   }
 
   function saveSession(a, d, displayName, color) {
-    var s = { userId: a.userId, teamId: d.team_id, teamName: d.team_name, joinCode: d.join_code, displayName: displayName, color: color };
+    if (d && d.error) throw err(d.error);
+    var s = { userId: a.userId, teamId: d.team_id, teamName: d.team_name, joinCode: d.join_code || null, codeExpires: d.code_expires_at || null, role: d.role || 'member', displayName: displayName, color: color };
     ls(K_SESSION, s); return s;
   }
   function enter(fn, args, displayName, color) {
@@ -98,6 +103,20 @@
     return enter('join_team', { p_code: String(code || '').trim().toUpperCase(), p_display_name: displayName, p_color: color }, displayName, color);
   }
   function leave() { stopPolling(); ls(K_SESSION, null); }
+  function setSession(patch) { var s = session(); if (s) { ls(K_SESSION, Object.assign(s, patch)); } return session(); }
+  function isAdmin() { var s = session(); return !!(s && s.role === 'admin'); }
+  function rpc(fn, args) { return api('/rest/v1/rpc/' + fn, { method: 'POST', body: args }); }
+  function need2() { return need(); }
+  /* Patron : nouveau code (valable 7 jours). */
+  function regenerateCode() { var s = need2(); return rpc('regenerate_code', { p_team: s.teamId }).then(function (d) { return setSession({ joinCode: d.join_code, codeExpires: d.code_expires_at }); }); }
+  /* Patron : relire le code actuel (utile si l'appareil a été vidé). */
+  function refreshCode() { var s = need2(); return rpc('team_code', { p_team: s.teamId }).then(function (d) { return setSession({ joinCode: d.join_code, codeExpires: d.code_expires_at }); }); }
+  /* Patron : retirer un livreur. */
+  function removeMember(userId) { var s = need2(); return rpc('remove_member', { p_team: s.teamId, p_user: userId }); }
+  /* Quitter l'équipe (effacement côté serveur de ton appartenance). */
+  function leaveTeam() { var s = need2(); return rpc('leave_team', { p_team: s.teamId }).then(function () { leave(); }); }
+  /* Patron : supprimer l'équipe et toutes ses données. */
+  function deleteTeam() { var s = need2(); return rpc('delete_team', { p_team: s.teamId }).then(function () { leave(); }); }
 
   function toRow(rec, teamId) {
     var o = { team_id: teamId };
@@ -136,10 +155,10 @@
       });
     }
     return page().then(function () {
-      return api('/rest/v1/members?select=user_id,display_name,color&team_id=eq.' + encodeURIComponent(s.teamId));
+      return api('/rest/v1/members?select=user_id,display_name,color,role&team_id=eq.' + encodeURIComponent(s.teamId));
     }).then(function (m) {
       return { clients: rows.map(fromRow), serverTime: serverTime,
-        members: (m || []).map(function (x) { return { userId: x.user_id, displayName: x.display_name, color: x.color }; }) };
+        members: (m || []).map(function (x) { return { userId: x.user_id, displayName: x.display_name, color: x.color, role: x.role }; }) };
     });
   }
 
@@ -176,5 +195,6 @@
   }
 
   window.Cloud = { configured: configured, session: session, createTeam: createTeam, joinTeam: joinTeam, leave: leave,
-    push: push, pull: pull, startPolling: startPolling, stopPolling: stopPolling };
+    push: push, pull: pull, startPolling: startPolling, stopPolling: stopPolling,
+    isAdmin: isAdmin, regenerateCode: regenerateCode, refreshCode: refreshCode, removeMember: removeMember, leaveTeam: leaveTeam, deleteTeam: deleteTeam };
 })();

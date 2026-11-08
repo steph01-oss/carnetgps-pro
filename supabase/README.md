@@ -41,3 +41,9 @@ Les noms, adresses et téléphones des clients des livreurs sont des **données 
 - **Minimisation** : ne stocke que le nécessaire (nom, adresse, téléphone, consigne de livraison).
 - **Aucune donnée de santé** (ex. pathologie, matériel médical d'une personne) dans les notes.
 - Supprime les données d'un client sur demande ; limite l'accès aux membres de confiance (code d'équipe = secret).
+
+## Rôles et sécurité (v2)
+- Le créateur de l'équipe est **patron** ; il peut régénérer le code, retirer un livreur, supprimer l'équipe.
+- Code d'invitation valable 7 jours ; 5 faux codes = blocage 15 min.
+- Après avoir collé schema.sql : vérifie dans Authentication > Providers que « Anonymous sign-ins » est activé, et dans Authentication > Rate Limits que la limite d'inscriptions anonymes par IP est raisonnable (ex. 10/heure).
+- Choisis la région **UE** (ex. Paris ou Francfort) à la création du projet.
