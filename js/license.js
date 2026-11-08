@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   var LS = 'gc_license';
-  var FREE_LIMIT = 30;
+  var FREE_LIMIT = 60;
   var cur = { pro: false, plan: null, exp: 0, email: '', daysLeft: 0 };
   var listeners = [];
 

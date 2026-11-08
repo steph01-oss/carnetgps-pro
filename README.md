@@ -1,5 +1,5 @@
 # CarnetGPS Pro
-PWA carnet d'adresses clients (livreurs / artisans). Gratuit ≤30 clients, Pro 4,99 €/mois ou 39 €/an.
+PWA carnet d'adresses clients (livreurs / artisans). Gratuit ≤60 clients, Pro 4,99 €/mois ou 39 €/an.
 
 ## Lancer en local
 `python3 -m http.server 8000` puis http://localhost:8000

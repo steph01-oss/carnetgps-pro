@@ -211,7 +211,7 @@
   }
 
   /* --- Réglages / Pro --- */
-  function csvEsc(v) { v = String(v == null ? '' : v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function csvEsc(v) { v = String(v == null ? '' : v); if (/^[=@\t]/.test(v)) v = "'" + v; /* évite l'exécution de formules dans Excel */ return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
   function parseCSV(t) {
     t = t.replace(/^﻿/, ''); var sep = (t.split('\n')[0].match(/;/g) || []).length >= (t.split('\n')[0].match(/,/g) || []).length ? ';' : ',';
     var rows = [], row = [], cur = '', q = false;
