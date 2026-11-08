@@ -130,7 +130,11 @@
       '<div class="row"><button class="btn pri" id="f-ok">Enregistrer</button><button class="btn" id="f-no">Annuler</button></div>' + (n ? '' : '<div class="row"><button class="btn danger" id="f-del">Supprimer</button></div>'));
     var pos = { lat: c.lat, lng: c.lng };
     $('#f-geo').onclick = async function () { try { var r = await Geo.geocode($('#f-addr').value); pos = r; $('#f-pos').textContent = '✔ ' + r.label; } catch (e) { toast(e.message); } };
-    $('#f-here').onclick = async function () { try { pos = await Geo.position(); $('#f-pos').textContent = '✔ Position actuelle : ' + pos.lat.toFixed(5) + ', ' + pos.lng.toFixed(5); } catch (e) { toast(e.message); } };
+    $('#f-here').onclick = async function () {
+      var el = $('#f-pos'); el.style.color = ''; el.textContent = '⏳ Recherche de ta position… (autorise-la si le navigateur demande)';
+      try { var r = await Geo.position(); pos = { lat: r.lat, lng: r.lng }; el.textContent = '✔ Position trouvée' + (r.acc ? ' (précision ~' + Math.round(r.acc) + ' m)' : '') + ' : ' + pos.lat.toFixed(5) + ', ' + pos.lng.toFixed(5) + ' — appuie sur Enregistrer.'; }
+      catch (e) { el.style.color = 'var(--r)'; el.textContent = '✖ ' + e.message; }
+    };
     $('#f-no').onclick = closeModal;
     $('#f-ok').onclick = function () {
       var name = $('#f-name').value.trim(); if (!name) return toast('Le nom est obligatoire.');

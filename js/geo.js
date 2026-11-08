@@ -68,11 +68,22 @@
     if (!arr.length) throw new Error('Adresse introuvable.');
     return { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon), label: arr[0].display_name };
   }
-  function position() {
+  function once(opts) {
     return new Promise(function (ok, ko) {
-      if (!root.navigator || !navigator.geolocation) return ko(new Error('Position non disponible sur cet appareil.'));
-      navigator.geolocation.getCurrentPosition(function (p) { ok({ lat: p.coords.latitude, lng: p.coords.longitude }); },
-        function () { ko(new Error('Position refusée ou indisponible.')); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 });
+      navigator.geolocation.getCurrentPosition(function (p) { ok({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }); }, ko, opts);
+    });
+  }
+  /* Position actuelle : essai précis, puis repli sur une position approximative (réseau). Erreurs en français. */
+  function position() {
+    if (!root.navigator || !navigator.geolocation) return Promise.reject(new Error('Ce navigateur ne sait pas donner ta position.'));
+    return once({ enableHighAccuracy: true, timeout: 9000, maximumAge: 15000 }).catch(function (e) {
+      if (e && e.code === 1) throw e;
+      return once({ enableHighAccuracy: false, timeout: 20000, maximumAge: 120000 });
+    }).catch(function (e) {
+      var c = e && e.code;
+      throw new Error(c === 1 ? 'Localisation refusée. Clique sur le cadenas à côté de l\'adresse du site, autorise « Position », puis réessaie.'
+        : c === 3 ? 'Délai dépassé. Active la localisation de l\'appareil, puis réessaie.'
+        : 'Position introuvable. Vérifie que la localisation est activée (GPS sur téléphone, « Services de localisation » sous Windows).');
     });
   }
   root.Geo = { dist: dist, has: has, optimize: optimize, routeLength: routeLength, Nav: Nav, geocode: geocode, position: position };
